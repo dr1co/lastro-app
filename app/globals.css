@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
+/* Lastro design tokens (docs/visual-identity.md). Components use the semantic names only. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f5f3ec;
+  --surface: #fbfaf6;
+  --border: #d9e0da;
+  --text: #252c2a;
+  --text-muted: #59645f;
+  --accent: #315a50;
+  --accent-contrast: #fbfaf6;
+  --accent-soft: #ddece3;
+  --positive: #3f6e5c;
+  --positive-soft: #ddece3;
+  --negative: #a4544b;
+  --negative-soft: #f2e0dc;
+  --warning: #8a6a1f;
+  --warning-soft: #f3ebd5;
+  --info: #3d6b7a;
+  --info-soft: #e0edf0;
+  --chart-1: #527e6b;
+  --chart-2: #c9827a;
+  --chart-3: #91b8c4;
+  --chart-4: #d5b978;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #101815;
+    --surface: #19231f;
+    --border: #2d3a34;
+    --text: #f5f3ec;
+    --text-muted: #b5bfb9;
+    --accent: #a7cdb8;
+    --accent-contrast: #19352f;
+    --accent-soft: #24362e;
+    --positive: #a7cdb8;
+    --positive-soft: #22352c;
+    --negative: #e3a59d;
+    --negative-soft: #3a2724;
+    --warning: #e2c98d;
+    --warning-soft: #3a3322;
+    --info: #a9cbd5;
+    --info-soft: #1f3238;
+    --chart-1: #a7cdb8;
+    --chart-2: #e3a59d;
+    --chart-3: #a9cbd5;
+    --chart-4: #e2c98d;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-soft: var(--accent-soft);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-sora);
+  --radius-field: 0.75rem;
+  --radius-card: 1.25rem;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
 }
