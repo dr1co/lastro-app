@@ -4,5 +4,6 @@
     "types": ["cypress", "node"],
     "isolatedModules": false
   },
-  "include": ["**/*.ts", "../cypress.config.ts"]
+  "include": ["**/*.ts", "../cypress.config.ts"],
+  "exclude": []
 }

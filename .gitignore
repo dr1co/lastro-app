@@ -13,6 +13,13 @@
 # testing
 /coverage
 
+# local email outbox (dev and e2e)
+/.mail-outbox
+
+# cypress artifacts
+/cypress/screenshots
+/cypress/videos
+
 # next.js
 /.next/
 /out/

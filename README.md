@@ -17,8 +17,8 @@ Milestone **M1 — Core** is in progress.
 | Step | Scope | State |
 |---|---|---|
 | 1 | Foundations: tooling, domain logic, database schema, design tokens | Done |
-| 2 | Auth (email + password, Google), households, members, invites | Next |
-| 3 | Accounts (with balance update) and categories | — |
+| 2 | Auth (email + password, Google), households, members, invites | Done |
+| 3 | Accounts (with balance update) and categories | Next |
 | 4 | Transactions: quick add, list, filters, search | — |
 | 5 | Dashboard, charts, PWA basics | — |
 
@@ -29,7 +29,8 @@ Milestone **M1 — Core** is in progress.
 | Framework | [Next.js 16](https://nextjs.org) (App Router, Cache Components, Server Actions), React 19, TypeScript |
 | Styling | Tailwind CSS v4 with design tokens in `app/globals.css` |
 | Database | PostgreSQL + [Drizzle ORM](https://orm.drizzle.team) (postgres.js driver) |
-| Auth | [Better Auth](https://www.better-auth.com) (email + password, Google) |
+| Auth | [Better Auth](https://www.better-auth.com) (email + password with verification, Google) |
+| Email | nodemailer over SMTP; a local outbox file in dev/e2e |
 | Validation | Zod 4 |
 | Unit tests | Jest + Testing Library |
 | E2E tests | Cypress |
@@ -37,11 +38,18 @@ Milestone **M1 — Core** is in progress.
 ## Architecture
 
 ```
-app/              Routes, layouts and UI (App Router)
-components/ui/    Shared UI kit (added as screens are built)
-lib/domain/       Pure business logic: money, dates, transaction rules, balances, summaries
+app/
+  (centered)/     Auth, onboarding and invite pages (narrow centered layout)
+  (app)/          Signed-in app shell: header with household switcher, main nav, pages
+  api/auth/       Better Auth route handler
+proxy.ts          Redirects visitors without a session cookie to /entrar
+components/ui/    Generic UI kit: ActionForm, Field, Button/SubmitButton, ActionButton, Card…
+components/app/   App-specific components (nav, household switcher, member fields)
+lib/domain/       Pure business logic: money, dates, transactions, balances, summaries, auth/household/invite rules
+lib/server/       Server-only data access + integrations (auth config, session, mailer, households, members, invites)
+lib/actions/      Server Actions ("use server"), thin wrappers over lib/server
 lib/db/           Drizzle schema (schema.ts) and database client (client.ts)
-lib/strings.ts    All user-facing pt-BR copy
+lib/strings.ts    All user-facing pt-BR copy (UI and emails)
 db/migrations/    Generated SQL migrations (drizzle-kit)
 db/init/          SQL run when the docker Postgres starts the first time (creates lastro_test)
 tests/unit/       Jest unit tests, mirroring the source tree
@@ -53,8 +61,29 @@ Key ideas:
 
 - **Domain first.** Rules from the spec live in `lib/domain` as plain functions with no framework or database code, so they are easy to unit-test. For example: `balanceEffects` says how a transaction moves account balances, `accountBalance` computes a live balance, `balanceAdjustment` turns "the balance is now X" into an investment return or adjustment, and `monthTotals` / `totalsByMember` / `expensesByCategory` / `monthlyTrend` / `netWorth` power the dashboard.
 - **Money is integer cents** and **dates are `YYYY-MM-DD` strings** in the America/Sao_Paulo timezone, so there are no floating-point or timezone surprises.
-- **Everything belongs to a household.** Every domain table has a `household_id`, and the server resolves the current household from the session.
+- **Everything belongs to a household.** Every domain table has a `household_id`, and the server resolves the current household from the session (`requireHousehold()` in `lib/server/session.ts`: the last household used, else the first; no household → onboarding).
+- **Forms are Server Actions.** Each form is an `<ActionForm>` bound to an action built with `formAction(parse, handler)`: it validates with the domain parser, returns per-field errors (fields show them automatically by `name`) or runs the handler. This keeps every form the same shape.
 - **Transaction types:** income, expense, transfer, refund (lowers spending in its category), plus two system types created by balance updates: investment return (reported apart from earned income) and balance adjustment (ignored in totals).
+
+### Routes
+
+| Path | What it is |
+|---|---|
+| `/` | Landing page |
+| `/cadastro`, `/entrar` | Sign up / sign in (email + password; Google when configured). Both accept `?next=` |
+| `/verifique-seu-email` | "Check your inbox" after sign-up; the email link signs the user in |
+| `/esqueci-a-senha`, `/redefinir-senha` | Password reset by email |
+| `/bem-vindo` | Onboarding: create the first household or accept invites sent to your email |
+| `/convite/[token]` | Invite page: sign up / sign in, then accept |
+| `/inicio` | Dashboard (placeholder until step 5) |
+| `/membros`, `/membros/[id]` | Members (with or without login), invites, archive/restore, remove access |
+| `/casa` | Household settings: rename, switch, create another, delete (owner), sign out |
+
+### Households, members and invites
+
+- The creator of a household is its **owner**: only they can rename or delete it and remove someone's access. Everything else is open to every member.
+- A **member** is a profile; it may have no login. Removing someone's access unlinks their login but keeps the profile and its history. Only members without a login can be archived.
+- An **invite** is a single-use link valid for 7 days. It can target an existing member profile (the person who accepts takes it over) or create a new member. With an email, the invite is also emailed and shows up on that person's onboarding page.
 
 ### Data model (M1)
 
@@ -81,6 +110,22 @@ npm run dev                   # http://localhost:3000
 ```
 
 No Docker? Any Postgres on `localhost:5432` with user/password `lastro`/`lastro` and the databases `lastro` and `lastro_test` works.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string |
+| `BETTER_AUTH_SECRET` | Secret used to sign sessions and tokens |
+| `BETTER_AUTH_URL` | Public base URL of the app (used in email links) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional. When both are set, "Continuar com Google" appears. Redirect URI: `<BETTER_AUTH_URL>/api/auth/callback/google` |
+| `SMTP_URL`, `MAIL_FROM` | Optional SMTP connection string (e.g. `smtps://user:pass@smtp.example.com:465`) and sender |
+| `MAIL_OUTBOX_DIR` | Where emails are written when `SMTP_URL` is empty (default `.mail-outbox/`) |
+| `AUTH_RATE_LIMIT` | Set to `off` to disable auth rate limiting (e2e only) |
+
+### Emails in development
+
+Without `SMTP_URL`, emails are not sent. They are printed in the dev server console and appended to `.mail-outbox/outbox.jsonl`, so you can open verification and password-reset links from there.
 
 ### Scripts
 

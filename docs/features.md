@@ -67,7 +67,8 @@ Lastro is a web app for a **household** to manage its money together. It replace
 - A **member** is a profile inside a household: name, optional avatar or color.
 - A member **does not need a login**. The profile can be linked to a user later through an invite (§3.3).
 - Members are referenced by accounts (owner) and by transactions (who the transaction is for).
-- Archiving a member hides them from pickers. Their history stays and still counts in totals. Archived members can be restored.
+- Archiving a member hides them from pickers. Their history stays and still counts in totals. Archived members can be restored. Only members **without a login** can be archived; remove their access first.
+- **Removing a member** (owner only) removes their access: their login is unlinked from the profile, which stays with its history (and can be invited again). The owner's own access cannot be removed.
 - Seed on household creation: one member linked to the creator.
 
 ---

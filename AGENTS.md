@@ -30,8 +30,14 @@ Lastro is a household finance web app (pt-BR, BRL). Product spec: [docs/features
 - **Layers:**
   - `lib/domain/` — pure, framework-free business logic (money, dates, transaction rules, balances, summaries). No DB, no Next imports. Everything here is unit-tested.
   - `lib/db/` — Drizzle schema and client (`server-only`).
-  - `lib/strings.ts` — every user-facing pt-BR string. Do not hardcode copy in components.
-  - `app/` — routes and UI; `components/ui/` for the shared UI kit (added as needed).
+  - `lib/server/` — `server-only` data access and integrations: Better Auth config (`auth.ts`), session helpers (`session.ts`: `getSession`, `requireUser`, `requireHousehold`), mailer, and one module per aggregate (`households.ts`, `members.ts`, `invites.ts`…). Every function takes the `householdId` it is scoped to.
+  - `lib/actions/` — `"use server"` Server Actions. Thin: authorize via `requireUser`/`requireHousehold`, parse with a domain `parseX`, call `lib/server`, then `refresh()` or `redirect()`.
+  - `lib/strings.ts` — every user-facing pt-BR string (including email copy). Do not hardcode copy in components.
+  - `lib/forms.ts` — `FormState` (what form actions return) and small form/param helpers.
+  - `app/` — routes. `(centered)` = auth, onboarding and invite pages (narrow centered layout); `(app)` = the signed-in shell (header with household switcher + main nav). Route slugs are pt-BR (`/entrar`, `/membros`…).
+  - `components/ui/` — the generic UI kit; `components/app/` — app-specific pieces.
+- **Forms:** use `formAction(parseX, handler)` (`lib/server/form-action.ts`) for every form action and render the form with `<ActionForm action={…}>` + `<Field name=…>` + `<SubmitButton>`. Fields pick up their error and restored value from the action state by `name`; return `success(msg)` / `failure(msg, values)` or redirect. For one-click actions use `<ActionButton action={fn.bind(null, id)} />`.
+- **Buttons as links:** style links with `buttonClass()` from `components/ui/button-styles.ts` (a plain module, callable from Server Components). `button.tsx` is a client module.
 - **Money:** integer cents everywhere (`bigint` columns in `mode: "number"`). Format with `formatMoney`, parse user input with `parseMoney`. User transaction amounts are positive; the type gives the direction. Only system types (`investment_return`, `adjustment`) are signed.
 - **Dates:** ISO strings `YYYY-MM-DD` (Postgres `date` in `mode: "string"`); months are `YYYY-MM` keys. "Today" comes from `todayISO()` (America/Sao_Paulo). Never use `new Date("YYYY-MM-DD")` for calendar math.
 - **Validation:** zod schemas in `lib/domain`, exposed as `parseX(raw): ParseResult<T>` (see `lib/domain/validation.ts`) so forms get one message per field.
@@ -45,6 +51,10 @@ Lastro is a household finance web app (pt-BR, BRL). Product spec: [docs/features
 - `cacheComponents` and `partialPrefetching` are on. Anything that reads `cookies()`/`headers()` (the session) must render inside a `<Suspense>` boundary, and must not be awaited at the top level of a layout. See `node_modules/next/dist/docs/01-app/02-guides/authentication-with-cache-components.md`.
 - Re-check the session inside every Server Action / Route Handler; UI checks are not authorization.
 - `next dev` writes to `.next/dev`, so a dev server and `next build`/`next start` can coexist — that is how e2e runs while a dev server is up on port 3000.
+- Pages that read `params`/`searchParams` or the session rely on the `loading.tsx` of their route group as the Suspense boundary. Client components using `usePathname()` must also sit inside `<Suspense>` (see `MainNav`/`NavList`), or dynamic routes fail to prerender.
+- Middleware is called **Proxy** (`proxy.ts`). It only does the optimistic "no session cookie → `/entrar?next=…`" redirect; real checks happen in `requireUser`/`requireHousehold`. Do not redirect signed-in users away from `/entrar` in the proxy (a stale cookie would loop) — pages use `<RedirectIfSignedIn />`.
+- A Server Action that `redirect()`s does not re-render shared layouts. When an action changes what the layout shows (current household, household list), call `revalidatePath("/", "layout")` before redirecting. Actions that stay on the page call `refresh()`.
+- With Cache Components, client navigation keeps the previous route mounted but hidden (React `<Activity>`), so the DOM can contain two copies of a form.
 
 ## Environment gotchas
 
@@ -52,4 +62,14 @@ Lastro is a household finance web app (pt-BR, BRL). Product spec: [docs/features
 - Cypress on Ubuntu 24.04 needs system libraries: `sudo apt-get install -y libgtk2.0-0t64 libgtk-3-0t64 libgbm-dev libnotify-dev libnss3 libxss1 libasound2t64 libxtst6 xauth xvfb`.
 - Docker image pulls may fail behind a TLS-intercepting proxy (`x509: certificate signed by unknown authority`). Any Postgres 16+ on `localhost:5432` with user/password `lastro`/`lastro` and databases `lastro` + `lastro_test` works instead of docker-compose.
 - In Git Bash, long multi-file heredocs can fail to parse; prefer the editor's write tool for source files.
-- Zod is v4: use `z.enum(values, message)`, `z.ZodSafeParseResult`, `ctx.addIssue({ code: "custom", … })`.
+- Zod is v4: use `z.enum(values, message)`, `z.email()`, `z.ZodSafeParseResult`, `ctx.addIssue({ code: "custom", … })`.
+- Better Auth: tables are hand-written in `lib/db/schema.ts` (core schema + `user.last_household_id`, declared in `user.additionalFields`). Errors from `auth.api.*` are `APIError`s whose `body.code` maps to pt-BR via `authErrorMessage`. Email+password sign-in requires a verified email. `AUTH_RATE_LIMIT=off` disables rate limiting (used by e2e, since `next start` runs in production mode).
+- Emails: without `SMTP_URL`, `sendEmail` appends to `<MAIL_OUTBOX_DIR>/outbox.jsonl` (default `.mail-outbox/`) and logs to the console — open verification/reset links from there in dev.
+
+## Cypress gotchas
+
+- Use `cy.findField(label)` (matches visible labels only, because of hidden `<Activity>` routes) instead of raw selectors.
+- After clicking a link, assert `cy.location("pathname")` before typing: a prefetched page can render before navigation commits and then be replaced, wiping typed text.
+- `cy.task` results are not retried by assertions; poll instead (see `pollEmail` in `cypress/support/commands.ts`).
+- After an action that persists something, wait for server-rendered proof (text in `main`) before `cy.reload()` or `cy.visit()`, or the request is aborted.
+- Every spec starts with `cy.resetDb()` (truncates all tables in `lastro_test` and clears the e2e outbox). `cy.login(user)` creates a verified user through the auth API and signs in.
